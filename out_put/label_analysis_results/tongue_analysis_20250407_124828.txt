@@ -1,0 +1,39 @@
+预测标签数据形状: (5992, 6)
+
+
+标签的分布:
+
+coating_label的分布:
+coating_label
+greasy          5342
+greasy_thick     532
+non_greasy       118
+Name: count, dtype: int64
+
+tai_label的分布:
+tai_label
+white           3349
+light_yellow    2284
+yellow           359
+Name: count, dtype: int64
+
+zhi_label的分布:
+zhi_label
+regular    2998
+dark       1594
+light      1400
+Name: count, dtype: int64
+
+fissure_label的分布:
+fissure_label
+NaN       4017
+light     1230
+severe     745
+Name: count, dtype: int64
+
+tooth_mk_label的分布:
+tooth_mk_label
+NaN       3393
+light     1903
+severe     696
+Name: count, dtype: int64
