@@ -28,7 +28,7 @@ venv/
 ENV/
 
 # Output files
-out_put/
+
 *.log
 
 # IDE files

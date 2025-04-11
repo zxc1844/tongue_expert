@@ -1,0 +1,38 @@
+[
+  {
+    "SID": "TE0002927",
+    "ground_truth": {
+      "coating_label": "greasy",
+      "tai_label": "white",
+      "zhi_label": "dark",
+      "fissure_label": null,
+      "tooth_mk_label": null
+    },
+    "predictions": {
+      "coating_label": "non_greasy",
+      "tai_label": "white",
+      "zhi_label": "regular",
+      "fissure_label": "NaN",
+      "tooth_mk_label": "NaN"
+    },
+    "raw_response": "```json\n{\"coating_label\": \"non_greasy\", \"tai_label\": \"white\", \"zhi_label\": \"regular\", \"fissure_label\": \"NaN\", \"tooth_mk_label\": \"NaN\"}\n```"
+  },
+  {
+    "SID": "TE0004163",
+    "ground_truth": {
+      "coating_label": "greasy",
+      "tai_label": "white",
+      "zhi_label": "regular",
+      "fissure_label": null,
+      "tooth_mk_label": null
+    },
+    "predictions": {
+      "coating_label": "non_greasy",
+      "tai_label": "white",
+      "zhi_label": "regular",
+      "fissure_label": "NaN",
+      "tooth_mk_label": "NaN"
+    },
+    "raw_response": "```json\n{\"coating_label\": \"non_greasy\", \"tai_label\": \"white\", \"zhi_label\": \"regular\", \"fissure_label\": \"NaN\", \"tooth_mk_label\": \"NaN\"}\n```"
+  }
+]
