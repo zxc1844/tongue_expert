@@ -110,6 +110,58 @@ python run_baseline_test.py --model other-vl-model
 python run_baseline_test.py --help
 ```
 
+### 并发处理功能
+
+为了更高效地处理大量图像，项目现已实现并发API调用功能，显著减少处理5000多张图片所需的时间。
+
+#### 并发处理特性
+
+- **并行API调用**：同时处理多张图片，大幅提高处理速度
+- **智能速率限制**：自动控制API调用频率，避免超出服务提供商的限制
+- **灵活配置**：可调整并发工作线程数和API调用速率
+- **完善错误处理**：单个图片处理失败不会影响整体流程，同时记录失败的图片ID
+- **进度监控**：实时显示处理进度和估计完成时间
+
+#### 使用并发处理
+
+运行具有并发处理能力的测试脚本：
+
+```bash
+# 使用默认设置（5个工作线程，每秒2个API调用）处理10个样本
+python run_concurrent_baseline.py
+
+# 处理所有样本，使用10个工作线程和每秒3个API调用
+python run_concurrent_baseline.py --sample -1 --workers 10 --rate 3
+
+# 自定义输出目录
+python run_concurrent_baseline.py --output "out_put/concurrent_results"
+```
+
+#### 可用命令行参数
+
+- `--sample`：要处理的样本数量。设置为-1表示处理所有样本
+- `--workers`：并发工作线程的最大数量（默认为5）
+- `--rate`：每秒最大API调用次数（默认为2）
+- `--model`：要使用的模型名称（默认为"qwen-vl-max"）
+- `--output`：结果输出目录
+
+#### 性能优化建议
+
+根据阿里云通义千问的服务限制，建议以下并发设置：
+
+- 对于 `qwen-vl-max` 模型，最佳设置为 `--workers 5 --rate 2`
+- 处理更多图像时，可以增加工作线程数，但应保持API调用速率不变
+- 如果遇到API限制错误，请减少 `--rate` 参数值
+
+#### 错误处理和恢复
+
+脚本会记录处理失败的图片ID，保存到输出目录中的JSON文件。可以使用这些ID重新处理失败的图片：
+
+```bash
+# 处理特定图片（未实现，仅作示例）
+# python run_concurrent_baseline.py --sids failed_sids.json
+```
+
 ### 测试结果
 
 测试结果将保存在 `out_put/baseline_results/` 目录下，包括：

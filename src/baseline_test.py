@@ -9,6 +9,12 @@ from datetime import datetime
 from tqdm import tqdm
 import openai
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, classification_report
+import concurrent.futures
+import time
+import queue
+from threading import Lock
+import random
+import argparse
 
 # Configure logging
 logging.basicConfig(
@@ -18,16 +24,67 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+class RateLimiter:
+    """A rate limiter to prevent exceeding API limits"""
+    
+    def __init__(self, max_calls_per_second=1, max_concurrent_requests=5):
+        """
+        Initialize the rate limiter
+        
+        Args:
+            max_calls_per_second (int): Maximum number of calls allowed per second
+            max_concurrent_requests (int): Maximum number of concurrent requests
+        """
+        self.max_calls_per_second = max_calls_per_second
+        self.max_concurrent_requests = max_concurrent_requests
+        self.call_timestamps = queue.Queue()
+        self.lock = Lock()
+        self.active_requests = 0
+        
+    def acquire(self):
+        """
+        Acquires permission to make an API call, blocking if necessary.
+        """
+        with self.lock:
+            # Wait until we have a free slot for concurrent requests
+            while self.active_requests >= self.max_concurrent_requests:
+                time.sleep(0.1)
+            
+            # Enforce the rate limit based on calls per second
+            now = time.time()
+            
+            # If we've made max_calls_per_second calls in the last second, wait
+            if self.call_timestamps.qsize() >= self.max_calls_per_second:
+                oldest_timestamp = self.call_timestamps.get()
+                time_since_oldest = now - oldest_timestamp
+                
+                if time_since_oldest < 1.0:
+                    # Sleep to respect the rate limit
+                    sleep_time = 1.0 - time_since_oldest + random.uniform(0.1, 0.3)  # Add jitter
+                    time.sleep(sleep_time)
+            
+            # Record this call timestamp
+            self.call_timestamps.put(time.time())
+            self.active_requests += 1
+    
+    def release(self):
+        """
+        Releases a request slot.
+        """
+        with self.lock:
+            self.active_requests -= 1
+
 class TongueVisionTest:
     """Class for testing the VL-MAX model on tongue images"""
     
-    def __init__(self, data_dir="data/TonguExpertDatabase", output_dir="out_put/baseline_results"):
+    def __init__(self, data_dir="data/TonguExpertDatabase", output_dir="out_put/baseline_results", model_name="qwen-vl-max"):
         """
         Initialize the tester
         
         Args:
             data_dir (str): Path to the data directory
             output_dir (str): Path to the output directory
+            model_name (str): Name of the model to use for API calls
         """
         self.data_dir = Path(data_dir)
         logger.info(f"Using data directory: {self.data_dir.absolute()}")
@@ -38,6 +95,10 @@ class TongueVisionTest:
         
         self.phenotypes_dir = self.data_dir / "Phenotypes"
         self.images_dir = self.data_dir / "TongueImage" / "Raw"
+        
+        # Store the model name
+        self.model_name = model_name
+        logger.info(f"Using model: {self.model_name}")
         
         # Check if directories exist
         if not self.data_dir.exists():
@@ -118,13 +179,12 @@ class TongueVisionTest:
         with open(image_path, "rb") as image_file:
             return base64.b64encode(image_file.read()).decode('utf-8')
     
-    def call_vision_model(self, image_path, model_name="qwen-vl-max"):
+    def call_vision_model(self, image_path):
         """
         Call the Tongyi Qianwen VL-MAX model using OpenAI's compatible interface
         
         Args:
             image_path (Path): Path to the image file
-            model_name (str): Name of the model to use
             
         Returns:
             str: The model's response
@@ -135,39 +195,59 @@ class TongueVisionTest:
             
             # Make the API call
             response = self.client.chat.completions.create(
-                model=model_name,
-               messages = [
+                model=self.model_name,
+              messages = [
     {
         "role": "system",
-        "content": "You are an expert in Traditional Chinese Medicine (TCM) specializing in tongue diagnosis. Your task is to analyze the provided tongue image and classify specific features according to the predefined English labels. You MUST adhere strictly to the provided label options and output format. Output ONLY the JSON object."
+        "content": "你是一位经验丰富的中医（老中医），尤其擅长舌诊。你的任务是运用你专业的视觉判断标准，仔细分析提供的舌头图像，并根据中医（TCM）的经典视觉特征对舌象进行分类。请严格专注于图像本身的视觉信息，并严格遵循下面提供的标签选项和输出格式要求。最终仅输出JSON对象。"
     },
     {
         "role": "user",
         "content": [
             {
                 "type": "text",
-                "text": """Analyze the tongue image provided and classify the following five indicators. For each indicator, select ONLY ONE label from the exact options provided below.
+                "text": """请根据中医舌诊的视觉判断标准，仔细分析下图，并对以下五个指标进行分类。对于每个指标，请从下面提供的选项中选择**唯一一个**最符合图像视觉特征的**英文标签**。括号中的中文描述了该英文标签对应的中医视觉标准，请以此作为你这位老中医进行视觉判断的核心依据。
 
-1.  **coating_label** (Tongue coating characteristic):
-    Options: [`greasy`, `greasy_thick`, `non_greasy`]
+1.  **`coating_label` (舌苔的质地视觉特征):**
+    选项 (Options): [
+      `greasy` (视觉上，苔质颗粒细腻致密、或伴有黏液、显得油亮、不清爽。对应中医【腻苔】的典型视觉),
+      `greasy_thick` (视觉上，苔质特征同'greasy'，但明显更厚、更密实、刮之不去感更强。对应中医【厚腻苔】的典型视觉),
+      `non_greasy` (视觉上，苔质不具备'greasy'的油腻、黏厚感，可能呈现薄、净、颗粒相对清晰或略干的状态。对应中医视觉上非腻苔，如薄苔、正常苔等的质地)
+    ]
 
-2.  **tai_label** (Color of tongue coating):
-    Options: [`white`, `light_yellow`, `yellow`]
+2.  **`tai_label` (舌苔的主要颜色视觉特征):**
+    选项 (Options): [
+      `white` (视觉上，舌苔整体呈现清晰的白色。对应中医【白苔】的视觉),
+      `light_yellow` (视觉上，舌苔整体呈现淡淡的、浅浅的黄色调。对应中医【淡黄苔/薄黄苔】的视觉),
+      `yellow` (视觉上，舌苔整体呈现明显、较深的黄色调。对应中医【黄苔】的视觉)
+    ]
 
-3.  **zhi_label** (Color of tongue body):
-    Options: [`regular`, `dark`, `light`]
+3.  **`zhi_label` (舌头的本体颜色视觉特征，即舌质颜色):**
+    选项 (Options): [
+      `regular` (视觉上，舌体颜色是健康的淡红色或鲜活的粉红色。对应中医【淡红舌】的标准视觉),
+      `dark` (视觉上，舌体颜色明显深红、暗红、绛红，或呈现明显的紫色、青紫色。对应中医【红绛舌/紫暗舌】等的视觉),
+      `light` (视觉上，舌体颜色明显浅淡、发白，缺乏红润光泽，呈"缺血"外观。对应中医【淡白舌】的视觉)
+    ]
 
-4.  **fissure_label** (Cracks on tongue):
-    Options: [`NaN`, `light`, `severe`]
-    (Use `NaN` if no fissures are visible.)
+4.  **`fissure_label` (舌面上的裂纹视觉特征):**
+    选项 (Options): [
+      `NaN` (视觉上，舌面上完全没有裂纹或明显的沟壑。对应中医【无裂纹】的视觉),
+      `light` (视觉上，舌面可见少量裂纹，或裂纹形态较浅、较细。对应中医【少许/浅裂纹】的视觉),
+      `severe` (视觉上，舌面可见较多裂纹，或裂纹形态明显较深、较粗、范围较广。对应中医【多/深裂纹】的视觉)
+    ]
+    (如果视觉上完全看不到裂纹，请选择 `NaN`。)
 
-5.  **tooth_mk_label** (Tooth marks on tongue sides):
-    Options: [`NaN`, `light`, `severe`]
-    (Use `NaN` if no tooth marks are visible.)
+5.  **`tooth_mk_label` (舌头边缘的齿痕视觉特征):**
+    选项 (Options): [
+      `NaN` (视觉上，舌头边缘光滑或形态自然，没有牙齿压迫形成的印痕。对应中医【无齿痕】的视觉),
+      `light` (视觉上，舌头边缘可见轻微的、较浅的波浪状压痕。对应中医【轻微/浅齿痕】的视觉),
+      `severe` (视觉上，舌头边缘可见非常明显的、较深的波浪状压痕，舌体可能显得胖大。对应中医【明显/深齿痕】的视觉)
+    ]
+    (如果视觉上完全看不到齿痕，请选择 `NaN`。)
 
-Your entire response must be ONLY a single JSON object containing these five keys and their corresponding selected labels. Do not include any introductory text, explanations, or markdown formatting outside the JSON structure.
+请严格按照老中医的视觉判断标准进行评估。你的整个回答**必须**仅仅是一个JSON对象，其中包含这五个**英文**键（`coating_label`, `tai_label`, `zhi_label`, `fissure_label`, `tooth_mk_label`）和它们对应的、你根据视觉判断所选择的**英文**标签值。确保输出的JSON格式正确，不要包含任何括号中的中文描述或其他解释性文字。
 
-Example Format:
+输出格式示例 (Example Format):
 ```json
 {"coating_label": "greasy", "tai_label": "white", "zhi_label": "regular", "fissure_label": "NaN", "tooth_mk_label": "light"}
 ```"""
@@ -227,56 +307,46 @@ Example Format:
             logger.error(f"Failed to extract predictions: {e}")
             return None
     
-    def run_evaluation(self, sample_limit=None):
+    def process_image(self, item, rate_limiter=None):
         """
-        Run the evaluation on the dataset
+        Process a single image with API rate limiting
         
         Args:
-            sample_limit (int, optional): Limit the number of samples to process (for testing)
+            item (tuple): A tuple containing (sid, row) where sid is the image identifier
+                         and row is the dataframe row with labels
+            rate_limiter (RateLimiter, optional): Rate limiter instance to control API call frequency
+            
+        Returns:
+            dict: Result dictionary or None if processing failed
         """
-        logger.info("Starting evaluation...")
+        sid, row = item
         
-        # Load data if not loaded yet
-        if self.labels_df is None:
-            self.load_data()
+        # Skip if image not found
+        if sid not in self.image_paths:
+            logger.warning(f"Skipping SID {sid}: No image found.")
+            return None
         
-        # Select samples to evaluate
-        if sample_limit is not None and sample_limit < len(self.labels_df):
-            sample_indices = np.random.choice(len(self.labels_df), sample_limit, replace=False)
-            eval_df = self.labels_df.iloc[sample_indices].copy()
-            logger.info(f"Using {sample_limit} random samples for evaluation.")
-        else:
-            eval_df = self.labels_df.copy()
-            logger.info(f"Using all {len(eval_df)} samples for evaluation.")
+        # Get image path
+        image_path = self.image_paths[sid]
         
-        # Prepare results storage
-        evaluation_results = []
-        
-        # Run evaluation
-        for idx, row in tqdm(eval_df.iterrows(), total=len(eval_df), desc="Processing images"):
-            sid = row['SID']
-            
-            # Skip if image not found
-            if sid not in self.image_paths:
-                logger.warning(f"Skipping SID {sid}: No image found.")
-                continue
-            
-            # Get image path
-            image_path = self.image_paths[sid]
+        try:
+            # Acquire permission from rate limiter if provided
+            if rate_limiter:
+                rate_limiter.acquire()
             
             # Call the model
             response = self.call_vision_model(image_path)
             
             if response is None:
                 logger.warning(f"Skipping SID {sid}: Model response is None.")
-                continue
+                return None
             
             # Extract predictions
             predictions = self.extract_predictions(response)
             
             if predictions is None:
                 logger.warning(f"Skipping SID {sid}: Failed to extract predictions.")
-                continue
+                return None
             
             # Store result with standardized ground truth values
             result = {
@@ -298,10 +368,105 @@ Example Format:
                 "raw_response": response
             }
             
-            evaluation_results.append(result)
+            return result
+        
+        except Exception as e:
+            logger.error(f"Error processing SID {sid}: {e}")
+            return None
+        
+        finally:
+            # Release the rate limiter if provided
+            if rate_limiter:
+                rate_limiter.release()
+    
+    def run_evaluation(self, sample_limit=None, max_workers=5, max_calls_per_second=2):
+        """
+        Run the evaluation on the dataset with concurrent processing
+        
+        Args:
+            sample_limit (int, optional): Limit the number of samples to process (for testing)
+            max_workers (int): Maximum number of concurrent workers
+            max_calls_per_second (int): Maximum API calls per second
+        """
+        logger.info("Starting evaluation...")
+        
+        # Load data if not loaded yet
+        if self.labels_df is None:
+            self.load_data()
+        
+        # Select samples to evaluate
+        if sample_limit is not None and sample_limit < len(self.labels_df):
+            sample_indices = np.random.choice(len(self.labels_df), sample_limit, replace=False)
+            eval_df = self.labels_df.iloc[sample_indices].copy()
+            logger.info(f"Using {sample_limit} random samples for evaluation.")
+        else:
+            eval_df = self.labels_df.copy()
+            logger.info(f"Using all {len(eval_df)} samples for evaluation.")
+        
+        # Create a rate limiter
+        rate_limiter = RateLimiter(
+            max_calls_per_second=max_calls_per_second,
+            max_concurrent_requests=max_workers
+        )
+        
+        # Prepare items for processing
+        items = [(row['SID'], row) for _, row in eval_df.iterrows()]
+        total_items = len(items)
+        
+        logger.info(f"Processing {total_items} images with {max_workers} workers " 
+                   f"and {max_calls_per_second} calls per second limit...")
+        
+        # Prepare results storage
+        evaluation_results = []
+        failed_sids = []
+        
+        # Create a progress bar for the entire process
+        pbar = tqdm(total=total_items, desc="Processing images")
+        
+        # Process images using concurrent workers
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks
+            future_to_sid = {
+                executor.submit(self.process_image, item, rate_limiter): item[0]
+                for item in items
+            }
+            
+            # Process completed tasks as they finish
+            for future in concurrent.futures.as_completed(future_to_sid):
+                sid = future_to_sid[future]
+                pbar.update(1)
+                
+                try:
+                    result = future.result()
+                    if result is not None:
+                        evaluation_results.append(result)
+                    else:
+                        failed_sids.append(sid)
+                except Exception as e:
+                    logger.error(f"Task for SID {sid} generated an exception: {e}")
+                    failed_sids.append(sid)
+        
+        pbar.close()
+        
+        # Log statistics
+        success_count = len(evaluation_results)
+        failure_count = len(failed_sids)
+        logger.info(f"Evaluation completed. Successfully processed {success_count} images.")
+        
+        if failure_count > 0:
+            logger.warning(f"Failed to process {failure_count} images.")
+            
+            # Log the first few failed SIDs as examples
+            if failed_sids:
+                logger.warning(f"Examples of failed SIDs: {failed_sids[:min(5, len(failed_sids))]}")
+                
+                # Save failed SIDs to a file for reference
+                failed_file = self.output_dir / f"failed_sids_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                with open(failed_file, 'w', encoding='utf-8') as f:
+                    json.dump(failed_sids, f)
+                logger.info(f"List of failed SIDs saved to: {failed_file}")
         
         self.predictions = evaluation_results
-        logger.info(f"Evaluation completed. Processed {len(evaluation_results)} images.")
     
     def standardize_label(self, value):
         """
@@ -513,7 +678,22 @@ Example Format:
             raise
 
 def main():
-    """Main function"""
+    """Main function with command-line argument parsing"""
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description="Run tongue vision evaluation with concurrent API calls")
+    parser.add_argument("--sample", type=int, default=10, 
+                      help="Number of samples to process. Set to -1 for all samples.")
+    parser.add_argument("--workers", type=int, default=5, 
+                      help="Maximum number of concurrent workers")
+    parser.add_argument("--rate", type=int, default=2, 
+                      help="Maximum API calls per second")
+    parser.add_argument("--model", type=str, default="qwen-vl-max", 
+                      help="Model name to use")
+    parser.add_argument("--output", type=str, default="out_put/baseline_results", 
+                      help="Output directory for results")
+    
+    args = parser.parse_args()
+    
     # Check for environment variable
     if "DASHCOPE_API_KEY" not in os.environ:
         logger.error("DASHCOPE_API_KEY environment variable not set.")
@@ -521,15 +701,28 @@ def main():
         return
     
     try:
-        # Create the tester instance
-        tester = TongueVisionTest()
+        # Create the tester instance with the specified model
+        tester = TongueVisionTest(output_dir=args.output, model_name=args.model)
         
-        # Run the pipeline with a sample limit for testing (remove or set to None for full evaluation)
-        # This is useful for initial testing to avoid consuming too many API credits
-        sample_limit = 10  # Set to None to run on all images
+        # Determine sample limit
+        sample_limit = None if args.sample < 0 else args.sample
         
-        # Run the pipeline
-        output_files = tester.run_pipeline(sample_limit)
+        # Log the concurrency settings
+        logger.info(f"Starting evaluation with settings:")
+        logger.info(f"  Sample limit: {sample_limit if sample_limit is not None else 'All samples'}")
+        logger.info(f"  Max workers: {args.workers}")
+        logger.info(f"  API rate limit: {args.rate} calls per second")
+        logger.info(f"  Model: {args.model}")
+        
+        # Run the evaluation with concurrent processing
+        tester.load_data()
+        tester.run_evaluation(
+            sample_limit=sample_limit,
+            max_workers=args.workers,
+            max_calls_per_second=args.rate
+        )
+        tester.calculate_metrics()
+        output_files = tester.save_results()
         
         # Print the output file paths
         logger.info("Evaluation completed successfully.")
