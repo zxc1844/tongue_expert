@@ -181,3 +181,54 @@ python run_concurrent_baseline.py --output "out_put/concurrent_results"
   - 角度纠偏技术
   - 光线、亮度及对比度调整
 - **实验设计**：对比原始图像与经过不同预处理方法后的图像在视觉大模型上的表现，找到有效提升模型准确率的方法。
+
+# Tongue Expert Dataset Preparation
+
+This repository contains code and data for the Tongue Expert project, which involves creating training and test datasets for fine-tuning a model for tongue diagnosis in Traditional Chinese Medicine (TCM).
+
+## Dataset Structure
+
+The original dataset is stored in the following locations:
+- Images: `data/TonguExpertDatabase/TongueImage/Raw/`
+- Labels: `data/TonguExpertDatabase/Phenotypes/L2_Labels_Predict.txt`
+
+## Dataset Splitting
+
+The dataset has been split into training and test sets as follows:
+
+1. **Test Set**: 
+   - 500 randomly sampled images with stratified sampling to maintain class distribution
+   - Saved to `data/test.txt`
+   - Format: Tab-separated values with columns for SID and 5 diagnostic labels
+
+2. **Training Set**:
+   - All remaining samples (~5,492 images)
+   - Saved to `data/train.jsonl`
+   - Format: JSONL file with each line containing a complete training example in the format required for fine-tuning
+
+## Implementation Details
+
+- Random seed of 42 was used for reproducibility
+- Stratified sampling was attempted on a composite label to maintain distribution across all categories
+- All 5 diagnostic labels are included: coating_label, tai_label, zhi_label, fissure_label, tooth_mk_label
+- Empty values in the original dataset were handled appropriately (converted to "None" in the output)
+- Image paths in the training data refer to the original image files in the Raw directory
+
+## Scripts
+
+- `split_dataset.py`: Main script to split the dataset and create the test.txt and train.jsonl files
+- `clean_test_file.py`: Script to clean the test.txt file by removing the composite_label column
+
+## Dataset Statistics
+
+The dataset includes the following label distributions:
+
+- `coating_label`: greasy (~89%), greasy_thick (~9%), non_greasy (~2%)
+- `tai_label`: white (~56%), light_yellow (~38%), yellow (~6%)
+- `zhi_label`: regular (~50%), dark (~27%), light (~23%)
+- `fissure_label`: light (~21%), severe (~12%), None (~67%)
+- `tooth_mk_label`: light (~32%), severe (~12%), None (~56%)
+
+## Usage
+
+The test.txt file can be used for evaluation, while the train.jsonl file can be used directly for fine-tuning the model according to the specifications in the demand document.
