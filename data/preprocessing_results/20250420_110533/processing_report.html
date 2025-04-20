@@ -1,0 +1,95 @@
+
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>舌诊图像预处理结果</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 20px; }
+                .comparison { display: flex; margin-bottom: 30px; }
+                .image { margin-right: 20px; }
+                h1, h2 { color: #333; }
+                img { max-width: 500px; border: 1px solid #ddd; }
+            </style>
+        </head>
+        <body>
+            <h1>舌诊图像预处理结果对比</h1>
+            <p>原始图像: data\TonguExpertDatabase\TongueImage\Raw\TE0002823.jpg</p>
+            <p>处理时间: 20250420_110533</p>
+            
+        
+            <h2>白平衡 (White Balance)</h2>
+            <div class="comparison">
+                <div class="image">
+                    <h3>原始图像</h3>
+                    <img src="TE0002823_original.jpg" alt="原始图像">
+                </div>
+                <div class="image">
+                    <h3>处理后</h3>
+                    <img src="TE0002823_white_balance.jpg" alt="白平衡 (White Balance)">
+                </div>
+            </div>
+            
+            <h2>光照归一化 (Light Normalization)</h2>
+            <div class="comparison">
+                <div class="image">
+                    <h3>原始图像</h3>
+                    <img src="TE0002823_original.jpg" alt="原始图像">
+                </div>
+                <div class="image">
+                    <h3>处理后</h3>
+                    <img src="TE0002823_light_normalization.jpg" alt="光照归一化 (Light Normalization)">
+                </div>
+            </div>
+            
+            <h2>色彩校正 (Color Correction)</h2>
+            <div class="comparison">
+                <div class="image">
+                    <h3>原始图像</h3>
+                    <img src="TE0002823_original.jpg" alt="原始图像">
+                </div>
+                <div class="image">
+                    <h3>处理后</h3>
+                    <img src="TE0002823_color_correction.jpg" alt="色彩校正 (Color Correction)">
+                </div>
+            </div>
+            
+            <h2>阴影去除增强 (Retinex Enhancement)</h2>
+            <div class="comparison">
+                <div class="image">
+                    <h3>原始图像</h3>
+                    <img src="TE0002823_original.jpg" alt="原始图像">
+                </div>
+                <div class="image">
+                    <h3>处理后</h3>
+                    <img src="TE0002823_retinex_enhancement.jpg" alt="阴影去除增强 (Retinex Enhancement)">
+                </div>
+            </div>
+            
+            <h2>伽马校正 (Gamma Correction)</h2>
+            <div class="comparison">
+                <div class="image">
+                    <h3>原始图像</h3>
+                    <img src="TE0002823_original.jpg" alt="原始图像">
+                </div>
+                <div class="image">
+                    <h3>处理后</h3>
+                    <img src="TE0002823_gamma_correction.jpg" alt="伽马校正 (Gamma Correction)">
+                </div>
+            </div>
+            
+            <h2>完整预处理流程 (Complete Pipeline)</h2>
+            <div class="comparison">
+                <div class="image">
+                    <h3>原始图像</h3>
+                    <img src="TE0002823_original.jpg" alt="原始图像">
+                </div>
+                <div class="image">
+                    <h3>处理后</h3>
+                    <img src="TE0002823_complete_pipeline.jpg" alt="完整预处理流程 (Complete Pipeline)">
+                </div>
+            </div>
+            
+        </body>
+        </html>
+        

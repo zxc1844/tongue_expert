@@ -15,6 +15,8 @@ import queue
 from threading import Lock
 import random
 import argparse
+import cv2
+from image_preprocessing import load_and_preprocess_image, preprocess_image
 
 # Configure logging
 logging.basicConfig(
@@ -176,8 +178,24 @@ class TongueVisionTest:
         Returns:
             str: Base64 encoded image
         """
-        with open(image_path, "rb") as image_file:
-            return base64.b64encode(image_file.read()).decode('utf-8')
+        try:
+            # Load and preprocess the image
+            image = load_and_preprocess_image(image_path)
+            
+            if image is None:
+                logger.warning(f"Failed to preprocess image {image_path}, using original image")
+                # Fallback to original image if preprocessing fails
+                with open(image_path, "rb") as image_file:
+                    return base64.b64encode(image_file.read()).decode('utf-8')
+            
+            # Encode the preprocessed image
+            _, buffer = cv2.imencode(".jpg", image)
+            return base64.b64encode(buffer).decode('utf-8')
+        except Exception as e:
+            logger.warning(f"Error preprocessing and encoding image: {e}. Using original image.")
+            # Fallback to original image if there's an error
+            with open(image_path, "rb") as image_file:
+                return base64.b64encode(image_file.read()).decode('utf-8')
     
     def call_vision_model(self, image_path):
         """
